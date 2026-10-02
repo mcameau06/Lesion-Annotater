@@ -4,14 +4,43 @@ const SIZE = 640;
 const PAD_GRAY = 'rgb(114,114,114)';
 
 let sessionPromise = null;
+let backend = null;
+const failedBackends = new Set();
 
 export const modelRequested = () => sessionPromise !== null;
+export const currentBackend = () => backend;
+
+// Fastest backend the browser offers, then slower ones. A backend that fails to load
+// (or later fails to run the model) is skipped, ending at wasm, which always works.
+function candidateBackends() {
+  const list = [];
+  if (navigator.gpu) list.push('webgpu');
+  if (document.createElement('canvas').getContext('webgl2')) list.push('webgl');
+  list.push('wasm');
+  return list.filter((b) => b === 'wasm' || !failedBackends.has(b));
+}
+
+async function createSession() {
+  let lastError;
+  for (const name of candidateBackends()) {
+    try {
+      const session = await ort.InferenceSession.create(MODEL_URL, { executionProviders: [name] });
+      backend = name;
+      return session;
+    } catch (e) {
+      console.warn(`onnxruntime ${name} backend unavailable, trying next`, e);
+      failedBackends.add(name);
+      lastError = e;
+    }
+  }
+  throw lastError;
+}
 
 function getSession() {
   if (typeof ort === 'undefined') throw new Error('onnxruntime-web did not load (check your connection).');
   if (!sessionPromise) {
     ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
-    sessionPromise = ort.InferenceSession.create(MODEL_URL, { executionProviders: ['wasm'] }).catch((e) => {
+    sessionPromise = createSession().catch((e) => {
       sessionPromise = null;
       throw e;
     });
@@ -54,8 +83,24 @@ export async function detect(img, region, { conf = 0.25, nmsIou = 0.45 } = {}) {
     input[2 * plane + i] = rgba[4 * i + 2] / 255;
   }
 
-  const outputs = await session.run({ [session.inputNames[0]]: new ort.Tensor('float32', input, [1, 3, SIZE, SIZE]) });
-  const out = outputs[session.outputNames[0]];
+  const feeds = { [session.inputNames[0]]: new ort.Tensor('float32', input, [1, 3, SIZE, SIZE]) };
+  let outputs;
+  try {
+    outputs = await session.run(feeds);
+  } catch (e) {
+    if (backend === 'wasm') throw e;
+    // The GPU backend loaded but cannot run this model (unsupported op, lost device): fall back.
+    console.warn(`onnxruntime ${backend} backend failed to run, falling back`, e);
+    failedBackends.add(backend);
+    sessionPromise = null;
+    const fallback = await getSession();
+    outputs = await fallback.run({ [fallback.inputNames[0]]: feeds[session.inputNames[0]] });
+    return decode(outputs[fallback.outputNames[0]], region, scale, padX, padY, conf, nmsIou);
+  }
+  return decode(outputs[session.outputNames[0]], region, scale, padX, padY, conf, nmsIou);
+}
+
+function decode(out, region, scale, padX, padY, conf, nmsIou) {
   const [, rows, n] = out.dims; // [1, 4 + numClasses, numAnchors], not transposed, no NMS
   const data = out.data;
 
