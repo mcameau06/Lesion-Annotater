@@ -5,6 +5,7 @@ import {
 } from './state.js';
 import { buildTracks } from './matching.js';
 import { detect, iou, modelRequested } from './detect.js';
+import { putImage, getImage, requestPersistence } from './imagestore.js';
 import { Viewer, drawCrop } from './viewer.js';
 
 const $ = (id) => document.getElementById(id);
@@ -442,6 +443,28 @@ async function loadImage(file) {
   return img;
 }
 
+function store(imageId, file) {
+  putImage(imageId, file).catch((e) => toast(`Could not keep ${file.name} for next time: ${e?.message || e}`, true));
+}
+
+// Decode this patient's images that were saved in IndexedDB on an earlier visit.
+async function restoreImages(patientId) {
+  const p = state.patients[patientId];
+  const missing = Object.keys(p?.images || {}).filter((id) => !bitmaps.has(id));
+  let restored = 0;
+  for (const id of missing) {
+    try {
+      const blob = await getImage(id);
+      if (!blob || bitmaps.has(id) || !state.patients[patientId]?.images[id]) continue;
+      bitmaps.set(id, await loadImage(blob));
+      restored++;
+    } catch (e) {
+      console.warn(`Could not restore ${p.images[id]?.name}`, e);
+    }
+  }
+  if (restored && state.currentPatientId === patientId) render();
+}
+
 function makeThumb(img, max = 160) {
   const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
   const canvas = document.createElement('canvas');
@@ -470,6 +493,7 @@ async function addFiles(fileList) {
         }
         im.thumb ??= makeThumb(img);
         bitmaps.set(existingId, img);
+        store(existingId, file);
         attached++;
       } else {
         const id = addImage(p, {
@@ -480,6 +504,7 @@ async function addFiles(fileList) {
           thumb: makeThumb(img),
         });
         bitmaps.set(id, img);
+        store(id, file);
         created++;
       }
     } catch (e) {
@@ -605,6 +630,7 @@ function route() {
   $('editor').hidden = mode !== 'editor';
   toast('');
   render();
+  if (opening) restoreImages(opening);
 }
 
 makePane('left');
@@ -616,5 +642,6 @@ initKeys();
 subscribe(render);
 window.addEventListener('hashchange', route);
 load();
+requestPersistence();
 route();
 setSaveErrorHandler(() => toast('Could not save to localStorage; export JSON to keep your work.', true));

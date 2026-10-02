@@ -1,3 +1,5 @@
+import { deleteImages } from './imagestore.js';
+
 const STORAGE_KEY = 'annotater.v1';
 
 // currentPatientId and view are session-only: the URL hash decides which patient is open.
@@ -105,7 +107,9 @@ export function addPatient(id) {
 }
 
 export function deletePatient(id) {
-  for (const imageId of Object.keys(state.patients[id].images)) bitmaps.delete(imageId);
+  const imageIds = Object.keys(state.patients[id].images);
+  for (const imageId of imageIds) bitmaps.delete(imageId);
+  deleteImages(imageIds);
   delete state.patients[id];
 }
 
@@ -119,6 +123,7 @@ export function removeImage(patient, imageId) {
   for (const lesionId of Object.keys(patient.images[imageId].lesions)) unlinkLesion(patient, imageId, lesionId);
   delete patient.images[imageId];
   bitmaps.delete(imageId);
+  deleteImages([imageId]);
 }
 
 export function addLesion(patient, imageId, bbox, source) {
