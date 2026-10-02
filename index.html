@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lesion Annotater</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"
+    integrity="sha384-RPL/K8tc0JVaNWsunkEmCzLeieefvFX2UCRLKLmLVChCI6P+CTKhzqF7VIeCc3Zp" crossorigin="anonymous"></script>
+</head>
+<body>
+  <section id="gallery" hidden>
+    <header class="gallery-head">
+      <h1>Matching sessions</h1>
+      <span class="spacer"></span>
+      <button id="btn-new-session">New session</button>
+      <button id="btn-export">Export JSON</button>
+      <button id="btn-import">Import JSON</button>
+      <input id="import-input" type="file" accept="application/json,.json" hidden>
+    </header>
+    <div id="gallery-grid"></div>
+  </section>
+
+  <div id="editor" hidden>
+  <header id="toolbar">
+    <a id="back-link" href="#/">← All sessions</a>
+    <strong id="patient-title"></strong>
+    <span class="sep"></span>
+    <button id="btn-add-images">Add images…</button>
+    <input id="file-input" type="file" accept="image/*" multiple hidden>
+    <span class="sep"></span>
+    <label title="Minimum YOLO confidence for auto-detected boxes">Confidence
+      <input id="conf" type="range" min="0.05" max="0.95" step="0.05" value="0.25">
+      <output id="conf-out">0.25</output>
+    </label>
+  </header>
+
+  <main>
+    <div id="panes"></div>
+    <aside id="sidebar">
+      <div id="compare">
+        <div class="compare-pane">
+          <canvas id="crop-left"></canvas>
+          <span class="compare-label" id="crop-left-label">No selection</span>
+        </div>
+        <div class="compare-pane">
+          <canvas id="crop-right"></canvas>
+          <span class="compare-label" id="crop-right-label">No selection</span>
+        </div>
+      </div>
+      <div class="side-actions">
+        <button id="btn-match" title="Match the selected lesion in the left pane with the selected lesion in the right pane (M)">Match (M)</button>
+        <button id="btn-unmatch" title="Remove the selected lesion of the active pane from its match (U)">Unmatch (U)</button>
+        <button id="btn-delete" title="Delete the selected lesion of the active pane (Del)">Delete (Del)</button>
+      </div>
+      <div class="side-actions">
+        <button id="btn-new" title="Confirm the selected lesion (active pane) is new: it appears here and in no earlier image (N)">Mark new (N)</button>
+        <button id="btn-missing" title="Confirm the selected lesion (active pane) is gone: present here but in no later image (X)">Mark missing (X)</button>
+        <button id="btn-accept" title="Confirm every pending new/missing suggestion">Accept all</button>
+      </div>
+      <p class="hint">
+        Drag on an image to draw a box. Click a box to select it. Wheel to zoom;
+        right-drag, Shift+drag or Space+drag to pan. Select one lesion in each
+        pane, then Match. “Detect in view” runs YOLO on the visible region only.
+        A lesion with no counterpart is only a suggestion (NEW? / GONE?) until you
+        confirm it with Mark new / Mark missing.
+      </p>
+      <div id="summary"></div>
+      <div class="table-wrap"><table id="tracks"></table></div>
+    </aside>
+  </main>
+  </div>
+
+  <footer id="status" role="status" aria-live="polite"></footer>
+  <div id="drop-overlay">Drop images to add them to the current patient</div>
+
+  <template id="pane-tpl">
+    <section class="pane">
+      <div class="pane-head">
+        <select class="img-select" title="Image"></select>
+        <input type="number" class="img-date" min="0" step="1" placeholder="Day" title="Day number (orders images over time, e.g. 0 or 285)">
+        <button class="btn-detect" title="Detect lesions in the visible region (D)">Detect in view</button>
+        <button class="btn-fit" title="Fit image to pane (F)">Fit</button>
+        <button class="btn-remove" title="Remove this image from the patient">Remove</button>
+      </div>
+      <div class="canvas-wrap">
+        <canvas role="img" aria-label="Skin image with lesion annotations"></canvas>
+        <div class="placeholder"></div>
+      </div>
+    </section>
+  </template>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
