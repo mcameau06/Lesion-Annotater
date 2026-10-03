@@ -17,6 +17,13 @@ let onSaveError = null;
 
 export const uid = () => crypto.randomUUID();
 
+// Lesion ids are 1, 2, 3... per image and match ids per patient. The counter only goes up, so
+// deleting something never lets a number be reused (matches refer to lesions by id).
+const takeId = (owner, counterKey) => owner[counterKey]++;
+
+// Highest whole-number id among the keys, so the counter can be rebuilt for older saves and imports.
+const nextAfter = (ids) => ids.reduce((max, id) => (/^\d+$/.test(id) ? Math.max(max, Number(id) + 1) : max), 1);
+
 export function subscribe(fn) {
   listeners.add(fn);
 }
@@ -59,8 +66,11 @@ function normalizePatients(patients) {
     for (const im of Object.values(out[pid].images)) {
       im.lesions = im.lesions || {};
       if (!Number.isInteger(im.takenAt)) im.takenAt = null; // older saves stored a date string
+      im.nextLesionId = Math.max(im.nextLesionId || 1, nextAfter(Object.keys(im.lesions)));
     }
-    for (const m of out[pid].matches) m.id = m.id || uid();
+    const matches = out[pid].matches;
+    out[pid].nextMatchId = Math.max(p.nextMatchId || 1, nextAfter(matches.map((m) => String(m.id))));
+    for (const m of matches) m.id ??= takeId(out[pid], 'nextMatchId');
   }
   return out;
 }
@@ -103,7 +113,7 @@ export function importData(text) {
 }
 
 export function addPatient(id) {
-  state.patients[id] ??= { updatedAt: Date.now(), images: {}, matches: [] };
+  state.patients[id] ??= { updatedAt: Date.now(), images: {}, matches: [], nextMatchId: 1 };
 }
 
 export function deletePatient(id) {
@@ -115,7 +125,7 @@ export function deletePatient(id) {
 
 export function addImage(patient, meta) {
   const id = uid();
-  patient.images[id] = { ...meta, lesions: {} };
+  patient.images[id] = { ...meta, lesions: {}, nextLesionId: 1 };
   return id;
 }
 
@@ -127,7 +137,7 @@ export function removeImage(patient, imageId) {
 }
 
 export function addLesion(patient, imageId, bbox, source) {
-  const id = uid();
+  const id = String(takeId(patient.images[imageId], 'nextLesionId'));
   patient.images[imageId].lesions[id] = { bbox, source };
   return id;
 }
@@ -160,7 +170,7 @@ export function linkLesions(patient, imgA, lesA, imgB, lesB) {
 
   if (mA && mA === mB) return { ok: true, msg: 'Already matched.' };
   if (!mA && !mB) {
-    patient.matches.push({ id: uid(), lesionIds: { [imgA]: lesA, [imgB]: lesB } });
+    patient.matches.push({ id: takeId(patient, 'nextMatchId'), lesionIds: { [imgA]: lesA, [imgB]: lesB } });
   } else if (mA && !mB) {
     if (mA.lesionIds[imgB]) return conflict;
     mA.lesionIds[imgB] = lesB;
