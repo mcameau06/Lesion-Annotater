@@ -171,7 +171,7 @@ function renderGallery() {
 function renderEditor() {
   const p = currentPatient();
   $('patient-title').textContent = state.currentPatientId;
-  const { order, index, tracks, byLesion } = buildTracks(p);
+  const { order, index, tracks, trackOf } = buildTracks(p);
 
   for (const side of SIDES) {
     if (!p.images[state.view[side]]) state.view[side] = null;
@@ -215,7 +215,7 @@ function renderEditor() {
     if (im && bmp) {
       const at = index.get(imageId);
       for (const [id, l] of Object.entries(im.lesions)) {
-        const t = byLesion.get(id);
+        const t = trackOf(imageId, id);
         const flags = [];
         if (t.first === at && at > 0) flags.push(t.newConfirmed ? 'NEW' : 'NEW?');
         if (t.last === at && at < order.length - 1) flags.push(t.missingConfirmed ? 'GONE' : 'GONE?');
@@ -232,19 +232,19 @@ function renderEditor() {
     pane.viewer.setLesions(lesions);
   }
 
-  renderCompare(p, byLesion);
+  renderCompare(p, trackOf);
   renderTable(p, order, tracks);
 }
 
 // Close-up crops of the selected lesion in each pane, so the user can check they're the
 // same lesion before matching (bounding boxes alone can be too small/coarse to tell at a glance).
-function renderCompare(p, byLesion) {
+function renderCompare(p, trackOf) {
   for (const side of SIDES) {
     const imageId = state.view[side];
     const lesionId = sel[side];
     const img = imageId && bitmaps.get(imageId);
     const lesion = img && p.images[imageId].lesions[lesionId];
-    const t = lesion && byLesion.get(lesionId);
+    const t = lesion && trackOf(imageId, lesionId);
     drawCrop($(`crop-${side}`), img, lesion?.bbox, t && trackColor(t));
     $(`crop-${side}-label`).textContent = lesion ? `${p.images[imageId].name} · #${t.number}` : 'No selection';
   }
@@ -278,7 +278,7 @@ function renderTable(p, order, tracks) {
   const body = table.createTBody();
   for (const t of tracks) {
     const row = body.insertRow();
-    row.classList.toggle('selected', SIDES.some((s) => Object.values(t.lesionIds).includes(sel[s])));
+    row.classList.toggle('selected', SIDES.some((s) => sel[s] && t.lesionIds[state.view[s]] === sel[s]));
     row.addEventListener('click', () => selectTrack(t));
 
     const num = row.insertCell();
@@ -310,7 +310,7 @@ function renderTable(p, order, tracks) {
 function selectLesion(side, lesionId) {
   sel[side] = lesionId;
   const p = currentPatient();
-  const t = lesionId && p ? buildTracks(p).byLesion.get(lesionId) : null;
+  const t = lesionId && p ? buildTracks(p).trackOf(state.view[side], lesionId) : null;
   const o = other(side);
   if (t && t.lesionIds[state.view[o]]) sel[o] = t.lesionIds[state.view[o]];
   render();
@@ -354,8 +354,8 @@ function markSelected(kind) {
   const imageId = state.view[active];
   const lesionId = sel[active];
   if (!p || !lesionId) return toast('Select a lesion in the active pane first.', true);
-  const t = buildTracks(p).byLesion.get(lesionId);
-  const valid = kind === 'new' ? t.isNew && t.firstLesionId === lesionId : t.isMissing && t.lastLesionId === lesionId;
+  const t = buildTracks(p).trackOf(imageId, lesionId);
+  const valid = kind === 'new' ? t.isNew && t.firstImageId === imageId : t.isMissing && t.lastImageId === imageId;
   if (!valid) {
     return toast(
       kind === 'new'

@@ -8,6 +8,10 @@ export function orderedImageIds(patient) {
   });
 }
 
+// Lesion ids are only unique within their image ("1" exists in every image), so anything that
+// looks a lesion up across the whole patient has to key on the image as well.
+const lesionKey = (imageId, lesionId) => `${imageId}/${lesionId}`;
+
 // A track is one physical lesion followed across the ordered images: every stored match,
 // plus a single-lesion track for each unmatched lesion. isNew/isMissing are derived here
 // (a suggestion); the user confirms them by setting lesion.status = 'new' | 'missing' on the
@@ -23,14 +27,14 @@ export function buildTracks(patient) {
     for (const [imageId, lesionId] of Object.entries(m.lesionIds)) {
       if (patient.images[imageId]?.lesions[lesionId]) {
         lesionIds[imageId] = lesionId;
-        matched.add(lesionId);
+        matched.add(lesionKey(imageId, lesionId));
       }
     }
     if (Object.keys(lesionIds).length) tracks.push({ matchId: m.id, lesionIds });
   }
   for (const imageId of order) {
     for (const lesionId of Object.keys(patient.images[imageId].lesions)) {
-      if (!matched.has(lesionId)) tracks.push({ matchId: null, lesionIds: { [imageId]: lesionId } });
+      if (!matched.has(lesionKey(imageId, lesionId))) tracks.push({ matchId: null, lesionIds: { [imageId]: lesionId } });
     }
   }
 
@@ -49,8 +53,9 @@ export function buildTracks(patient) {
     t.isMissing = t.last < order.length - 1;
     t.newConfirmed = t.isNew && patient.images[t.firstImageId].lesions[t.firstLesionId].status === 'new';
     t.missingConfirmed = t.isMissing && patient.images[t.lastImageId].lesions[t.lastLesionId].status === 'missing';
-    for (const lesionId of Object.values(t.lesionIds)) byLesion.set(lesionId, t);
+    for (const [imageId, lesionId] of Object.entries(t.lesionIds)) byLesion.set(lesionKey(imageId, lesionId), t);
   });
 
-  return { order, index, tracks, byLesion };
+  const trackOf = (imageId, lesionId) => byLesion.get(lesionKey(imageId, lesionId));
+  return { order, index, tracks, trackOf };
 }
