@@ -84,9 +84,12 @@ function setActive(side) {
 
 // ---------- render ----------
 
+// Numbered matches step around the colour wheel by the golden angle so neighbours look distinct;
+// older saves with UUID match ids are hashed to a hue instead.
 const colorFor = (matchId) => {
   let hue = 0;
-  for (const ch of matchId) hue = (hue * 31 + ch.charCodeAt(0)) % 360;
+  if (Number.isInteger(matchId)) hue = (matchId * 137.508) % 360;
+  else for (const ch of String(matchId)) hue = (hue * 31 + ch.charCodeAt(0)) % 360;
   return `hsl(${hue} 85% 60%)`;
 };
 
